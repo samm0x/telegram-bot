@@ -95,16 +95,63 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.add(item)
 
     db.commit()
+    db.refresh(order)
+    order_id = int(order.id)
     db.close()
+
 
     context.user_data["cart"] = []
 
     await query.edit_message_text(
-        f"سفارش شماره {order.id} ثبت شد!\n\n"
+        f"سفارش شماره {order_id} ثبت شد!\n\n"
         f"مبلغ {total:,} تومان رو به شماره کارت زیر واریز کن:\n\n"
         f"6037-XXXX-XXXX-XXXX\n\n"
         f"بعد از واریز، رسید رو بفرست."
     )
+
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+async def admin_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != ADMIN_ID:
+        await update.message.reply_text("دسترسی ندارید!")
+        return
+
+    db = SessionLocal()
+    orders = db.query(Order).filter(Order.is_paid == False).all()
+    db.close()
+
+    if not orders:
+        await update.message.reply_text("سفارش جدیدی نیست.")
+        return
+
+    for order in orders:
+        keyboard = [[InlineKeyboardButton(
+            "تایید پرداخت",
+            callback_data=f"confirm_{order.id}"
+        )]]
+        await update.message.reply_text(
+            f"سفارش #{order.id}\n"
+            f"کاربر: @{order.username}\n"
+            f"مبلغ: {order.total:,} تومان",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+
+async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    order_id = int(query.data.split("_")[1])
+
+    db = SessionLocal()
+    order = db.query(Order).filter(Order.id == order_id).first()
+    order.is_paid = True
+    db.commit()
+    user_id = order.user_id
+    db.close()
+
+    await query.edit_message_text(f"سفارش #{order_id} تایید شد! ✅")
+    await context.bot.send_message(user_id, f"سفارش #{order_id} تایید شد! به زودی ارسال میشه. ✅")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -113,6 +160,8 @@ def main():
     app.add_handler(CallbackQueryHandler(add_to_cart, pattern="add_"))
     app.add_handler(CallbackQueryHandler(show_cart, pattern="show_cart"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
+    app.add_handler(CommandHandler("orders", admin_orders))
+    app.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_"))
     print("ربات شروع به کار کرد!")
     app.run_polling()
 
