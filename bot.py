@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import os
 from dotenv import load_dotenv
-
+from database import Order , SessionLocal , OrderItem
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -73,14 +73,38 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     cart = context.user_data.get("cart", [])
+    if not cart:
+        await query.edit_message_text("سبد خریدت خالیه!")
+        return
+
     total = sum(p["price"] for p in cart)
+
+    db = SessionLocal()
+    order = Order(
+        user_id=query.from_user.id,
+        username=query.from_user.username,
+        total=total
+    )
+    db.add(order)
+    db.flush()
+
+    for p in cart:
+        item = OrderItem(order_id=order.id, product_name=p["name"], price=p["price"])
+        db.add(item)
+
+    db.commit()
+    db.close()
+
+    context.user_data["cart"] = []
+
     await query.edit_message_text(
+        f"سفارش شماره {order.id} ثبت شد!\n\n"
         f"مبلغ {total:,} تومان رو به شماره کارت زیر واریز کن:\n\n"
         f"6037-XXXX-XXXX-XXXX\n\n"
         f"بعد از واریز، رسید رو بفرست."
     )
-    context.user_data["cart"] = []
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
