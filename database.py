@@ -27,6 +27,13 @@ class OrderItem(Base):
     price = Column(Integer)
     order = relationship("Order", back_populates="items")
 
+class Product(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    price = Column(Integer, nullable=False)
+    is_available = Column(Boolean, default=True)
+
 Base.metadata.create_all(engine)
 
 def get_db():
